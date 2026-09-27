@@ -1,11 +1,12 @@
 import { isDeepStrictEqual } from "node:util";
 import { db, type Prisma } from "@crm/db";
+import { aiProviderModel, readAiProvider } from "@crm/db/ai-provider";
 import {
 	CRM_EVENT_CATALOG,
 	CRM_EVENT_TYPES,
 	type CrmEventType,
 } from "@crm/db/crm-events";
-import { readAgentModel } from "@crm/db/settings";
+import { SETTINGS_ID } from "@crm/db/settings";
 import { WORKSPACE_ID } from "@crm/db/workspace";
 import {
 	AGENT_ACTION_TYPES,
@@ -231,7 +232,6 @@ export async function saveBuilderDraft(
 		};
 	}
 
-	const model = await readAgentModel(db);
 	const now = new Date();
 	const manifestTriggers = input.triggers.map((trigger) => ({
 		type: trigger.type,
@@ -271,6 +271,21 @@ export async function saveBuilderDraft(
 	for (const file of files) assertSafeArtifact(file.content);
 
 	return db.$transaction(async (tx) => {
+		await tx.$queryRaw`SELECT id FROM "appSetting" WHERE id = ${SETTINGS_ID} FOR SHARE`;
+		const selection = aiProviderModel(await readAiProvider(tx));
+		if (!selection)
+			return {
+				saved: false as const,
+				issues: [
+					"Configure an AI provider and model in Settings before saving an agent.",
+				],
+				availableConnections: validation.connections,
+			};
+		const model = {
+			id: selection.modelId,
+			contextWindowTokens: selection.contextWindowTokens,
+		};
+
 		const [lockedConversation] = await tx.$queryRaw<
 			Array<{ id: string; agentId: string | null }>
 		>`
@@ -337,6 +352,8 @@ export async function saveBuilderDraft(
 				manifest: true,
 				modelId: true,
 				modelContextWindowTokens: true,
+				modelProviderId: true,
+				modelMaxOutputTokens: true,
 			},
 		});
 		if (
@@ -344,6 +361,8 @@ export async function saveBuilderDraft(
 			latest.instructions === input.instructions &&
 			latest.modelId === model.id &&
 			latest.modelContextWindowTokens === model.contextWindowTokens &&
+			latest.modelProviderId === selection.providerId &&
+			latest.modelMaxOutputTokens === selection.maxOutputTokens &&
 			isDeepStrictEqual(latest.manifest, manifest)
 		) {
 			await persistArtifactSnapshots(tx, conversationId, latest.id, files);
@@ -366,6 +385,8 @@ export async function saveBuilderDraft(
 				manifest: manifest as Prisma.InputJsonValue,
 				modelId: model.id,
 				modelContextWindowTokens: model.contextWindowTokens,
+				modelProviderId: selection.providerId,
+				modelMaxOutputTokens: selection.maxOutputTokens,
 				sandboxPolicy,
 				validation: {
 					status: "passed",

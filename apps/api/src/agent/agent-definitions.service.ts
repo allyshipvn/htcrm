@@ -846,6 +846,7 @@ function readCapabilities(manifest: Prisma.JsonValue | undefined) {
 				)
 				.join("; "),
 			actions: [],
+			mcp: [],
 			dataScope: null,
 			channel: null,
 		};
@@ -859,6 +860,7 @@ function readCapabilities(manifest: Prisma.JsonValue | undefined) {
 		readable: true as const,
 		problem: null,
 		actions: parsed.data.actions,
+		mcp: parsed.data.mcp,
 		dataScope: parsed.data.dataScope,
 		channel: slack?.destination ?? null,
 	};

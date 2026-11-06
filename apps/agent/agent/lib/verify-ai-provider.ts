@@ -30,17 +30,23 @@ export async function verifyAiProvider(
 			execute: async () => "pong",
 		}),
 	};
-	let streamError: unknown;
-	const recordError = (error: unknown) => {
-		streamError ??= error;
+	let streamFailed = false;
+	let providerError: AiProviderModelError | undefined;
+	const recordFailure = (error: AiProviderModelError | undefined) => {
+		streamFailed = true;
+		providerError ??= error;
 	};
-	const consume = async (result: {
-		consumeStream: (options: {
-			onError: (error: unknown) => void;
-		}) => PromiseLike<void>;
-	}) => {
-		await result.consumeStream({ onError: recordError });
-		if (streamError) throw streamError;
+	const consume = async (
+		result: Pick<ReturnType<typeof streamText>, "consumeStream">,
+	) => {
+		await result.consumeStream({
+			onError: (error) =>
+				recordFailure(
+					error instanceof AiProviderModelError ? error : undefined,
+				),
+		});
+		if (streamFailed)
+			throw providerError ?? new Error("The model stream failed.");
 	};
 	try {
 		const first = streamText({
@@ -51,7 +57,10 @@ export async function verifyAiProvider(
 			prompt,
 			toolChoice: "auto",
 			tools,
-			onError: ({ error }) => recordError(error),
+			onError: ({ error }) =>
+				recordFailure(
+					error instanceof AiProviderModelError ? error : undefined,
+				),
 		});
 		await consume(first);
 		if ((await first.finishReason) === "length") return tokenLimitResult;
@@ -74,7 +83,10 @@ export async function verifyAiProvider(
 			maxOutputTokens,
 			toolChoice: "auto",
 			tools,
-			onError: ({ error }) => recordError(error),
+			onError: ({ error }) =>
+				recordFailure(
+					error instanceof AiProviderModelError ? error : undefined,
+				),
 			messages: [
 				{
 					role: "user",
@@ -96,7 +108,7 @@ export async function verifyAiProvider(
 			};
 		return { ok: true, message: "Streaming and CRM tool calling work." };
 	} catch (caught) {
-		const error = streamError ?? caught;
+		const error = providerError ?? caught;
 		return {
 			ok: false,
 			message: signal.aborted

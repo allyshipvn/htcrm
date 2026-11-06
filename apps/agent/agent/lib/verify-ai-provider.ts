@@ -30,6 +30,24 @@ export async function verifyAiProvider(
 			execute: async () => "pong",
 		}),
 	};
+	let streamFailed = false;
+	let providerError: AiProviderModelError | undefined;
+	const recordFailure = (error: AiProviderModelError | undefined) => {
+		streamFailed = true;
+		providerError ??= error;
+	};
+	const consume = async (
+		result: Pick<ReturnType<typeof streamText>, "consumeStream">,
+	) => {
+		await result.consumeStream({
+			onError: (error) =>
+				recordFailure(
+					error instanceof AiProviderModelError ? error : undefined,
+				),
+		});
+		if (streamFailed)
+			throw providerError ?? new Error("The model stream failed.");
+	};
 	try {
 		const first = streamText({
 			model,
@@ -39,15 +57,12 @@ export async function verifyAiProvider(
 			prompt,
 			toolChoice: "auto",
 			tools,
-			onError: ({ error }) => {
-				throw error;
-			},
+			onError: ({ error }) =>
+				recordFailure(
+					error instanceof AiProviderModelError ? error : undefined,
+				),
 		});
-		await first.consumeStream({
-			onError: (error) => {
-				throw error;
-			},
-		});
+		await consume(first);
 		if ((await first.finishReason) === "length") return tokenLimitResult;
 		const calls = await first.toolCalls;
 		const results = await first.toolResults;
@@ -68,9 +83,10 @@ export async function verifyAiProvider(
 			maxOutputTokens,
 			toolChoice: "auto",
 			tools,
-			onError: ({ error }) => {
-				throw error;
-			},
+			onError: ({ error }) =>
+				recordFailure(
+					error instanceof AiProviderModelError ? error : undefined,
+				),
 			messages: [
 				{
 					role: "user",
@@ -79,11 +95,7 @@ export async function verifyAiProvider(
 				...(await first.response).messages,
 			],
 		});
-		await second.consumeStream({
-			onError: (error) => {
-				throw error;
-			},
-		});
+		await consume(second);
 		if ((await second.finishReason) === "length") return tokenLimitResult;
 		if (
 			(await second.finishReason) !== "stop" ||
@@ -95,7 +107,8 @@ export async function verifyAiProvider(
 				message: "The model called the tool but did not return a final answer.",
 			};
 		return { ok: true, message: "Streaming and CRM tool calling work." };
-	} catch (error) {
+	} catch (caught) {
+		const error = providerError ?? caught;
 		return {
 			ok: false,
 			message: signal.aborted

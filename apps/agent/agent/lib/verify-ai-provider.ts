@@ -30,6 +30,18 @@ export async function verifyAiProvider(
 			execute: async () => "pong",
 		}),
 	};
+	let streamError: unknown;
+	const recordError = (error: unknown) => {
+		streamError ??= error;
+	};
+	const consume = async (result: {
+		consumeStream: (options: {
+			onError: (error: unknown) => void;
+		}) => PromiseLike<void>;
+	}) => {
+		await result.consumeStream({ onError: recordError });
+		if (streamError) throw streamError;
+	};
 	try {
 		const first = streamText({
 			model,
@@ -39,15 +51,9 @@ export async function verifyAiProvider(
 			prompt,
 			toolChoice: "auto",
 			tools,
-			onError: ({ error }) => {
-				throw error;
-			},
+			onError: ({ error }) => recordError(error),
 		});
-		await first.consumeStream({
-			onError: (error) => {
-				throw error;
-			},
-		});
+		await consume(first);
 		if ((await first.finishReason) === "length") return tokenLimitResult;
 		const calls = await first.toolCalls;
 		const results = await first.toolResults;
@@ -68,9 +74,7 @@ export async function verifyAiProvider(
 			maxOutputTokens,
 			toolChoice: "auto",
 			tools,
-			onError: ({ error }) => {
-				throw error;
-			},
+			onError: ({ error }) => recordError(error),
 			messages: [
 				{
 					role: "user",
@@ -79,11 +83,7 @@ export async function verifyAiProvider(
 				...(await first.response).messages,
 			],
 		});
-		await second.consumeStream({
-			onError: (error) => {
-				throw error;
-			},
-		});
+		await consume(second);
 		if ((await second.finishReason) === "length") return tokenLimitResult;
 		if (
 			(await second.finishReason) !== "stop" ||
@@ -95,7 +95,8 @@ export async function verifyAiProvider(
 				message: "The model called the tool but did not return a final answer.",
 			};
 		return { ok: true, message: "Streaming and CRM tool calling work." };
-	} catch (error) {
+	} catch (caught) {
+		const error = streamError ?? caught;
 		return {
 			ok: false,
 			message: signal.aborted

@@ -20,6 +20,8 @@ permissions:
 jobs:
   open:
     name: Open a pull request into main
+    # Upstream-only: this fork has no `main`; `release` is its integration branch.
+    if: github.repository == 'trycompai/crm'
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:

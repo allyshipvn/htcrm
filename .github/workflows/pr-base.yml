@@ -16,7 +16,9 @@ permissions:
 jobs:
   retarget:
     name: Retarget onto main
+    # Upstream-only: this fork has no `main`; PRs target `release` directly.
     if: >-
+      github.repository == 'trycompai/crm' &&
       github.event.pull_request.head.ref != 'main' &&
       !startsWith(github.event.pull_request.head.ref, 'release-please--')
     runs-on: ubuntu-24.04

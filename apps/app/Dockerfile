@@ -1,4 +1,4 @@
-FROM oven/bun:1.3.12 AS bun
+FROM oven/bun:1.4.0 AS bun
 
 FROM node:24-bookworm-slim AS base
 RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates openssl \
@@ -8,7 +8,7 @@ WORKDIR /app
 
 FROM base AS prune
 COPY . .
-RUN bun x turbo@2.11.9 prune app --docker
+RUN bun x turbo@2.11.9 prune app --docker && cp bun.lock out/json/bun.lock
 
 FROM base AS manifests
 COPY --from=prune /app/out/json/ ./

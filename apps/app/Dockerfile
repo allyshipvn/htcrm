@@ -8,7 +8,7 @@ WORKDIR /app
 
 FROM base AS prune
 COPY . .
-RUN bun x turbo@2.10.8 prune app --docker
+RUN bun x turbo@2.11.9 prune app --docker
 
 FROM base AS manifests
 COPY --from=prune /app/out/json/ ./

@@ -1,7 +1,6 @@
 import dns from "node:dns/promises";
 import https from "node:https";
 import net from "node:net";
-import { Readable } from "node:stream";
 import { AI_PROVIDER } from "./ai-provider-config";
 import { isBlockedAddress } from "./safe-fetch";
 
@@ -128,7 +127,17 @@ export async function providerRequest(
 				const headers = new Headers();
 				const contentType = response.headers["content-type"];
 				if (contentType) headers.set("content-type", contentType);
-				const body = Readable.toWeb(response) as ReadableStream<Uint8Array>;
+				const chunks = response[Symbol.asyncIterator]();
+				const body = new ReadableStream<Uint8Array>({
+					async pull(controller) {
+						const { done, value } = await chunks.next();
+						if (done) controller.close();
+						else controller.enqueue(new Uint8Array(value));
+					},
+					cancel() {
+						response.destroy();
+					},
+				});
 				resolve(new Response(body, { status, headers }));
 			},
 		);
